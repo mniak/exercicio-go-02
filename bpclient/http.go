@@ -15,12 +15,12 @@ type OmniAPI struct {
 }
 
 // Authorize creates a new payment
-func (api *OmniAPI) Authorize(a AuthorizationRequest) (result AuthorizationResponse, err error) {
+func (api *OmniAPI) Authorize(req AuthorizationRequest) (result AuthorizationResponse, err error) {
 	client := resty.New().
 		SetHostURL(api.BaseURL).
 		SetAuthToken(api.Token.AccessToken)
 	resp, err := client.R().
-		SetBody(a).
+		SetBody(req).
 		SetError(&[]Error{}).
 		SetResult(&AuthorizationResponse{}).
 		Post("/1/physicalSales")
@@ -33,18 +33,21 @@ func (api *OmniAPI) Authorize(a AuthorizationRequest) (result AuthorizationRespo
 		err = fmt.Errorf("Invalid status code: %d", s)
 		return
 	}
-	result = *resp.Result().(*AuthorizationResponse)
+	if resp.IsSuccess() {
+		result = *resp.Result().(*AuthorizationResponse)
+	}
 	return
 }
 
 // ConfirmAuthorization confirms an authorization (or payment)
-func (api *OmniAPI) ConfirmAuthorization(paymentID string) (err error) {
+func (api *OmniAPI) ConfirmAuthorization(paymentID string) (result ConfirmationResponse, err error) {
 	client := resty.New().
 		SetHostURL(api.BaseURL).
 		SetAuthToken(api.Token.AccessToken)
 	resp, err := client.R().
 		SetBody(map[string]string{}).
-		SetResult(&AuthorizationResponse{}).
+		SetError(&[]Error{}).
+		SetResult(&ConfirmationResponse{}).
 		Put(fmt.Sprintf("/1/physicalSales/%s/confirmation", paymentID))
 
 	if err != nil {
@@ -56,6 +59,65 @@ func (api *OmniAPI) ConfirmAuthorization(paymentID string) (err error) {
 			log.Printf("Confirmation errors: %v\n", errors)
 		}
 		err = fmt.Errorf("Error response with status %d", resp.StatusCode())
+	}
+	if resp.IsSuccess() {
+		result = *resp.Result().(*ConfirmationResponse)
+	}
+	return
+}
+
+// Cancel cancels a payment
+func (api *OmniAPI) Cancel(paymentID string, req CancellationRequest) (result CancellationResponse, err error) {
+	client := resty.New().
+		SetHostURL(api.BaseURL).
+		SetAuthToken(api.Token.AccessToken)
+	resp, err := client.R().
+		SetBody(req).
+		SetError(&[]Error{}).
+		SetResult(&CancellationResponse{}).
+		Post(fmt.Sprintf("/1/physicalSales/%s/voids", paymentID))
+
+	if err != nil {
+		return
+	}
+	if resp.IsError() {
+		b := resp.Body()
+		log.Print("Body")
+		log.Print(string(b))
+		if e := resp.Error(); e != nil {
+			errors := e.([]Error)
+			log.Printf("Cancellation errors: %v\n", errors)
+		}
+		err = fmt.Errorf("Error response with status %d", resp.StatusCode())
+	}
+	if resp.IsSuccess() {
+		result = *resp.Result().(*CancellationResponse)
+	}
+	return
+}
+
+func (api *OmniAPI) ReverseCancellation(paymentID, voidID string) (result CancellationReversalResponse, err error) {
+	client := resty.New().
+		SetHostURL(api.BaseURL).
+		SetAuthToken(api.Token.AccessToken)
+	resp, err := client.R().
+		SetBody(map[string]string{}).
+		SetError(&[]Error{}).
+		SetResult(&CancellationReversalResponse{}).
+		Delete(fmt.Sprintf("/1/physicalSales/%s/voids/%s", paymentID, voidID))
+
+	if err != nil {
+		return
+	}
+	if resp.IsError() {
+		if e := resp.Error(); e != nil {
+			errors := e.([]Error)
+			log.Printf("Cancellation reveral errors: %v\n", errors)
+		}
+		err = fmt.Errorf("Error response with status %d", resp.StatusCode())
+	}
+	if resp.IsSuccess() {
+		result = *resp.Result().(*CancellationReversalResponse)
 	}
 	return
 }
